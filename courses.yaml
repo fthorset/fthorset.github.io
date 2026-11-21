@@ -1,0 +1,12 @@
+# Forsiden: én oppføring per kompendium.
+# examDate kopieres for hånd fra exam.date i kursets course.yaml. Hold dem like.
+- code: TMA4400
+  title: Matematikk 1
+  url: https://fthorset-tma4400.github.io
+  term: H2026
+  examDate: "2026-12-01"
+- code: JUR2001
+  title: Rettslære
+  url: https://fthorset-jur2001.github.io
+  term: H2026
+  examDate: "2027-01-06"

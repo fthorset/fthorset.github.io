@@ -1,0 +1,135 @@
+/*
+ * Apple-inspirert tema for JUR2001.
+ *
+ * Overstyrer bare rammeverkets design-tokens (navnene i study-companion
+ * src/styles/tokens.css) pluss noen få regler for knapper og overskrifter.
+ * `html:root` gir høyere spesifisitet enn rammeverkets `:root`, så rekkefølgen
+ * stilarkene lastes i spiller ingen rolle.
+ */
+
+html:root {
+  /* Systemfonter som på Apple-enheter, med nøytrale fallbacks ellers */
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter",
+    "Helvetica Neue", Arial, sans-serif;
+  --font-body:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue",
+    Arial, sans-serif;
+  /* Rammeverket bruker --font-mono til etiketter, chips og tall. Apple bruker
+     systemfonten der, så tokenet peker på den, og ekte kode får monospace under. */
+  --font-mono:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue",
+    Arial, sans-serif;
+  --font-code: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Lyse, nøytrale flater */
+  --bg: #fbfbfd;
+  --bg-elevated: #f5f5f7;
+  --card: #f5f5f7;
+  --card-nested: #ececf0;
+  --card-hover: #ececf0;
+  --fg: #1d1d1f;
+  --muted: #6e6e73;
+  --faint: #6e6e73;
+  --border: #e3e3e8;
+  --border-strong: #d2d2d7;
+  --on-strong: #ffffff;
+
+  /* Dempede systemfarger */
+  --indigo: #3a679e;
+  --cyan: #2a7f7c;
+  --green: #3b7d49;
+  --yellow: #9a7612;
+  --orange: #b0601e;
+  --red: #b5413a;
+  --violet: #6a58a8;
+
+  /* Rolige pastellflater i bokser */
+  --note: #1f4f86;
+  --note-bg: #eaf1fa;
+  --tip: #2e6b3e;
+  --tip-bg: #e9f4ec;
+  --warning: #8a4b12;
+  --warning-bg: #fbf1e4;
+  --goals: #1f5f5c;
+  --goals-bg: #e7f3f2;
+  --takeaways-bg: #eef0f8;
+  --exam-bg: #fbf1e4;
+  --answer-bg: #e9f4ec;
+  --wrong: #9e2a22;
+  --wrong-bg: #fbe9e7;
+
+  /* Rundere hjørner og mykere skygger */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 20px;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow: 0 4px 16px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 24px 60px rgb(0 0 0 / 0.14);
+  --scrim: rgb(0 0 0 / 0.4);
+
+  --leading-tight: 1.15;
+  --tracking: 0.01em;
+}
+
+html:root[data-theme="dark"] {
+  --bg: #000000;
+  --bg-elevated: #1c1c1e;
+  --card: #1c1c1e;
+  --card-nested: #2c2c2e;
+  --card-hover: #2c2c2e;
+  --fg: #f5f5f7;
+  --muted: #a1a1a6;
+  --faint: #8e8e93;
+  --border: #2c2c2e;
+  --border-strong: #3a3a3c;
+  --on-strong: #000000;
+
+  --indigo: #8db4e6;
+  --cyan: #7fc8c2;
+  --green: #8fc79c;
+  --yellow: #e0c068;
+  --orange: #eba46a;
+  --red: #ef8a80;
+  --violet: #b3a6e6;
+
+  --note: #a9c7ec;
+  --note-bg: #14243a;
+  --tip: #a8d5b3;
+  --tip-bg: #15281b;
+  --warning: #f2c28f;
+  --warning-bg: #33230f;
+  --goals: #8fd0c9;
+  --goals-bg: #102523;
+  --takeaways-bg: #1b1c2e;
+  --exam-bg: #33230f;
+  --answer-bg: #15281b;
+  --wrong: #f3a69c;
+  --wrong-bg: #371614;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow: 0 4px 16px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 24px 60px rgb(0 0 0 / 0.7);
+  --scrim: rgb(0 0 0 / 0.6);
+}
+
+/* Stilrene knapper: pilleform, systemfont, ingen versaler */
+html :is(.sc-btn, .sc-pill, .fc-btn, .fc-reset, .stepper-btn, .sim-btn) {
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Overskrifter med Apple-aktig tyngde og tett sporing */
+html :is(h1, h2, h3) {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* Kode beholder monospace */
+html :is(code, pre, kbd, samp) {
+  font-family: var(--font-code);
+}

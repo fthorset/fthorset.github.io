@@ -1,0 +1,455 @@
+---
+import { parse } from "yaml";
+import { ClientRouter } from "astro:transitions";
+import ThemeToggle from "study-companion/components/ThemeToggle.astro";
+import { faviconDataUri, OG_WIDTH, OG_HEIGHT } from "../../node_modules/study-companion/src/lib/favicon.ts";
+import { contrastText } from "../../node_modules/study-companion/src/lib/color.ts";
+import {
+  THEME_COLOR_LIGHT,
+  THEME_COLOR_DARK,
+} from "../../node_modules/study-companion/src/lib/themeColor.ts";
+import { plain } from "../../node_modules/study-companion/src/lib/text.ts";
+import {
+  hubCollectionLd,
+  websiteLd,
+  authorId,
+  serializeLd,
+} from "../../node_modules/study-companion/src/lib/jsonLd.ts";
+// Vite resolves `?raw` relative to this source file at bundle time
+// (cwd-independent) and puts the YAML in the module graph so `hub:dev`
+// hot-reloads it.
+import raw from "../../courses.yaml?raw";
+import {
+  daysUntil,
+  formatExamCountdown,
+  EXAM_PAST_LABEL,
+} from "../../node_modules/study-companion/src/lib/countdown.ts";
+import "study-companion/styles/fonts.css";
+import "study-companion/styles/tokens.css";
+import "study-companion/styles/base.css";
+import "study-companion/styles/primitives.css";
+import "../../theme/apple.css";
+
+/**
+ * Forside for alle kompendiene, tilpasset fra rammeverkets egen hub.
+ * All visuell stil kommer fra rammeverket og theme/apple.css.
+ */
+type HubCourse = {
+  code: string;
+  title: string;
+  url: string;
+  term: string;
+  note?: string;
+  /** Hand-mirrored from the course repo's exam.date (see courses.yaml). */
+  examDate?: string;
+};
+const courses = parse(raw) as HubCourse[];
+
+// A tile's live countdown: the same phrase the course header shows, computed
+// at build time and re-derived client-side (script below). A past exam yields a
+// null pill (hidden) — a completed course shouldn't advertise a stale date.
+const countdownFor = (c: HubCourse) => {
+  if (!c.examDate) return null;
+  const date = new Date(c.examDate);
+  if (Number.isNaN(date.getTime())) return null;
+  const days = daysUntil(date);
+  return {
+    iso: date.toISOString(),
+    days,
+    phrase: days < 0 ? EXAM_PAST_LABEL : formatExamCountdown(days),
+  };
+};
+
+// Group by term, groups in file order of first appearance. Within a term, tiles
+// sort by soonest UPCOMING exam (F11) — the multi-course triage glance "which
+// exam is closest?" — then undated courses in file order, then past-at-build
+// exams last (a passed exam's pill auto-hides, so pinning it above by its
+// smallest date would be backwards). Past-below-undated must match the client
+// script below, which appends a tile to the END of its term list once the
+// viewer's clock passes its exam — the same tier the next build would give it,
+// so SSR and hydrated order never disagree.
+const groups: { term: string; courses: HubCourse[] }[] = [];
+for (const c of courses) {
+  const g = groups.find((g) => g.term === c.term);
+  if (g) g.courses.push(c);
+  else groups.push({ term: c.term, courses: [c] });
+}
+const rank = (c: HubCourse) => {
+  if (!c.examDate) return 1;
+  const date = new Date(c.examDate);
+  if (Number.isNaN(date.getTime())) return 1;
+  return daysUntil(date) >= 0 ? 0 : 2;
+};
+for (const g of groups) {
+  g.courses.sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra !== 0) return 0;
+    return a.examDate!.localeCompare(b.examDate!);
+  });
+}
+// "H2026" → "Høst 2026", "V2026" → "Vår 2026" (term shape is CI-tested).
+const termLabel = (t: string) =>
+  `${t[0] === "H" ? "Høst" : "Vår"} ${t.slice(1)}`;
+
+const description =
+  "Interaktive kompendier i NTNU-emner, med leseplan, eksamensoppgaver, flashcards, quiz og formelsamling. Velg et emne.";
+
+const themeKey = "sc:theme:hub";
+
+// ---- SEO / social / structured data ----
+// The hub is the front door to all six guides, so it carries the same head
+// surface a course site does. Absolute URLs resolve against `site` in
+// astro.config.hub.mjs, which is always set for this build (unlike a course,
+// where `site` is the consumer's to configure) — so no degradation path here.
+// "Kompendium" is the word students search with ("kompendium ntnu"); see
+// ui.guideLabel in src/schema.ts. No long dash (WRITING.md).
+const HUB_TITLE = "Kompendier i NTNU-emner";
+// The site name: og:site_name, the h1 and the WebSite node below must agree.
+const SITE_NAME = "Kompendier";
+const AUTHOR_NAME = "Fredrik Thorset";
+const canonical = new URL("/", Astro.site).href;
+const ogImage = new URL("/og-image.png", Astro.site).href;
+const author = { name: AUTHOR_NAME, id: authorId(canonical) };
+const hubLd = hubCollectionLd({
+  name: SITE_NAME,
+  description,
+  url: canonical,
+  inLanguage: "nb",
+  author,
+  // File order, not the exam-sorted display order: the ItemList states WHICH
+  // guides exist, and a list whose positions churn with the calendar is a
+  // worse signal than a stable one.
+  courses: courses.map((c) => ({
+    code: c.code,
+    title: plain(c.title),
+    url: c.url,
+  })),
+});
+// Google's site name for the hub's subdomain (see websiteLd).
+const siteLd = websiteLd({ name: SITE_NAME, url: canonical, inLanguage: "nb" });
+
+// Per-theme brand accent — the hub has no course.accent, so it pins its own
+// pair and derives the on-accent text exactly as CourseLayout does for a course
+// (contrastText + tokens.css switching --accent / --accent-contrast per theme).
+// Light stays the companion blue (also the favicon); dark lifts to Flexoki
+// blue-400 so the countdown pill's ink-on-accent clears AA — the shared #205ea6
+// reads only 2.93:1 against ink in dark. Without these vars tokens.css falls
+// back to the light accent in both themes.
+const accentLight = "#2f7a6b";
+const accentDark = "#7cc7b5";
+const accentVars =
+  `--accent-light: ${accentLight}; --accent-dark: ${accentDark}; ` +
+  `--accent-contrast-light: ${contrastText(accentLight)}; ` +
+  `--accent-contrast-dark: ${contrastText(accentDark)};`;
+---
+
+<!doctype html>
+<html lang="nb" style={accentVars}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{HUB_TITLE}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={AUTHOR_NAME} />
+    <link rel="canonical" href={canonical} />
+
+    {
+      /* Chrome/native-control theming, trimmed from CourseLayout: one
+        un-mediaed theme-color owned by the theme script below, which repaints
+        it on load, on an OS flip and on a toggle (tokens.css has no
+        prefers-color-scheme fallback, so a media-keyed dark meta would paint
+        dark chrome on a light page for a no-JS dark-OS reader). */
+    }
+    <meta name="theme-color" content={THEME_COLOR_LIGHT} />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="generator" content="study-companion" />
+
+    {
+      /* The data-URI favicon stays (instant, no request); the rastered PNG from
+        the hub-icons build hook is what crawlers and iOS can actually fetch. */
+    }
+    <link rel="icon" href={faviconDataUri(accentLight)} />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={HUB_TITLE} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:locale" content="nb_NO" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content={String(OG_WIDTH)} />
+    <meta property="og:image:height" content={String(OG_HEIGHT)} />
+    <meta property="og:image:alt" content={SITE_NAME} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={HUB_TITLE} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    {
+      /* CollectionPage listing every guide. The ItemList's items are OFF-SITE,
+        so this wins no carousel (those need same-site items) — its job is
+        binding the hub and the six guides into one entity graph, via an author
+        @id the course sites share. */
+    }
+    <script
+      type="application/ld+json"
+      set:html={serializeLd(hubLd)}
+      is:inline
+    />
+    <script
+      type="application/ld+json"
+      set:html={serializeLd(siteLd)}
+      is:inline
+    />
+    <script
+      is:inline
+      define:vars={{
+        themeKey,
+        themeColorLight: THEME_COLOR_LIGHT,
+        themeColorDark: THEME_COLOR_DARK,
+      }}
+    >
+      // No-flash theme init — trimmed from CourseLayout (single page: no
+      // view-transition swaps to re-apply across). An explicit stored choice
+      // wins; otherwise the OS preference does, tracked live. The OS path
+      // dispatches sc:themechange so ThemeToggle can mirror aria-pressed.
+      (function () {
+        function isDark() {
+          // Only the storage read can throw (policy-blocked storage); the OS
+          // fallback must survive it, or a dark-OS reader gets a light hub.
+          let saved = null;
+          try {
+            saved = localStorage.getItem(themeKey);
+          } catch (e) {
+            /* storage blocked — fall through to the OS preference */
+          }
+          return saved
+            ? saved === "dark"
+            : matchMedia("(prefers-color-scheme: dark)").matches;
+        }
+        // Browser chrome follows the APPLIED theme (a stored toggle choice can
+        // hold against the OS), so paint it from data-theme, never the OS.
+        function paintChrome() {
+          const dark =
+            document.documentElement.getAttribute("data-theme") === "dark";
+          const meta = document.querySelector('meta[name="theme-color"]');
+          if (meta)
+            meta.setAttribute(
+              "content",
+              dark ? themeColorDark : themeColorLight,
+            );
+        }
+        function applyTheme() {
+          if (isDark())
+            document.documentElement.setAttribute("data-theme", "dark");
+          else document.documentElement.removeAttribute("data-theme");
+          paintChrome();
+        }
+        applyTheme();
+        // ThemeToggle dispatches this after applying + persisting a flip.
+        document.addEventListener("sc:themechange", paintChrome);
+        matchMedia("(prefers-color-scheme: dark)").addEventListener(
+          "change",
+          function () {
+            try {
+              if (localStorage.getItem(themeKey)) return;
+            } catch (e) {
+              /* storage disabled — OS still wins */
+            }
+            applyTheme();
+            document.dispatchEvent(
+              new CustomEvent("sc:themechange", {
+                detail:
+                  document.documentElement.getAttribute("data-theme") === "dark"
+                    ? "dark"
+                    : "light",
+              }),
+            );
+          },
+        );
+      })();
+    </script>
+    {
+      /* ClientRouter so astro:page-load fires and ThemeToggle's onPage wiring
+        runs — the same lifecycle contract the toggle has in CourseLayout. */
+    }
+    <ClientRouter />
+  </head>
+  <body>
+    <div class="hub">
+      <header class="hub-head">
+        <h1>{SITE_NAME}</h1>
+        <ThemeToggle storageKey={themeKey} />
+      </header>
+      <p class="hub-intro">{description}</p>
+      {
+        groups.map((g) => (
+          <section class="hub-term">
+            <h2 class="hub-term-label sc-kicker">{termLabel(g.term)}</h2>
+            <ul class="hub-list">
+              {g.courses.map((c) => {
+                const cd = countdownFor(c);
+                return (
+                  <li>
+                    <a class="hub-tile sc-press sc-tile sc-lift" href={c.url}>
+                      <span class="hub-tile-head">
+                        <span class="hub-code sc-kicker">{c.code}</span>
+                        {/* data-nosnippet keeps the build-day phrase out of
+                            search snippets (see ExamCard). Google allows it
+                            only on span/div/section, so it wraps the <time>;
+                            display:contents keeps the <time> the flex item. */}
+                        {cd && (
+                          <span class="hub-countdown-wrap" data-nosnippet>
+                            <time
+                              class="sc-countdown hub-countdown"
+                              datetime={c.examDate}
+                              data-exam-countdown={cd.iso}
+                              data-past={cd.days < 0}
+                              data-countdown-hide-past
+                              hidden={cd.days < 0}
+                            >
+                              {cd.phrase}
+                            </time>
+                          </span>
+                        )}
+                      </span>
+                      <span class="hub-title">{c.title}</span>
+                      {c.note && <span class="hub-note">{c.note}</span>}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))
+      }
+      <script>
+        import { onPage } from "../../node_modules/study-companion/src/lib/pageLifecycle.ts";
+        import { refreshExamCountdowns } from "../../node_modules/study-companion/src/lib/examCountdown.ts";
+        // Tile countdowns SSR a build-time snapshot; re-derive per load against
+        // the viewer's clock (and hide any that have since passed) — the same
+        // contract the course header's pill uses. onPage fires on load/swap, not
+        // on an interval, so a single post-refresh pass is enough.
+        onPage(() => {
+          refreshExamCountdowns();
+          // The build-time comparator already sorts past-at-build exams to the
+          // end of their term; the static page may not rebuild for days, so once
+          // refresh has flagged a tile's exam past (data-past) move that tile to
+          // the end of its term list too, preserving relative order — the same
+          // tier a rebuild would give it, so this is a no-op unless an exam
+          // slipped past between builds. F11's "which exam is closest?" order
+          // must survive that gap.
+          for (const list of document.querySelectorAll(".hub-list")) {
+            for (const li of list.querySelectorAll(
+              ':scope > li:has([data-exam-countdown][data-past="true"])',
+            )) {
+              list.append(li);
+            }
+          }
+        });
+      </script>
+      <footer class="hub-foot">
+        Laget med <a href="https://github.com/MartinSA04/StudyCompanion"
+          >StudyCompanion</a
+        > · <a href="https://github.com/fthorset">fthorset på GitHub</a>
+      </footer>
+    </div>
+  </body>
+</html>
+
+<style>
+  .hub {
+    max-width: var(--measure);
+    margin-inline: auto;
+    padding: var(--space-6) var(--space-4);
+  }
+  .hub-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-2);
+  }
+  .hub-intro {
+    color: var(--muted);
+    margin-bottom: var(--space-6);
+  }
+  .hub-term {
+    margin-bottom: var(--space-6);
+  }
+  .hub-term-label {
+    margin-bottom: var(--space-3);
+  }
+  .hub-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  /* Float (fill + shadow + radius) plus the hover shadow-lift come from the
+     shared .sc-tile primitive; the 1px rise and press dip from .sc-lift /
+     .sc-press. These are big cards, so they use the same tile language as the
+     overview module tiles. Only layout and type are local. */
+  .hub-tile {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    text-decoration: none;
+    color: var(--fg);
+  }
+  /* Code on the left, the exam countdown pill (when present) opposite it — the
+     tile's "which exam is closest" glance without opening the course. */
+  .hub-tile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+  /* Mono uppercase recipe from .sc-kicker; --accent-ink for AA on the panel
+     fill in both themes (same reasoning as the flashcard section kicker). */
+  .hub-code {
+    color: var(--accent-ink);
+  }
+  /* The pill is fully the shared .sc-countdown; keep it from stretching the row. */
+  .hub-countdown {
+    flex: none;
+  }
+  .hub-countdown-wrap {
+    display: contents;
+  }
+  .hub-title {
+    font-size: var(--text-lg);
+    line-height: var(--leading-snug);
+    /* A long course name has to wrap inside a narrow tile; hyphenate it via the
+       page's lang instead of chopping mid-word. A courses.yaml entry may pin the
+       seam with a soft hyphen (AUTHORING.md §6). */
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
+  /* Small muted mono aside (e.g. "no longer maintained") — same tone as the
+     footer, kept quiet so it never competes with the title. */
+  .hub-note {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--muted);
+  }
+  .hub-foot {
+    margin-top: var(--space-6);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--muted);
+    text-align: center;
+  }
+  .hub-foot a {
+    color: var(--muted);
+  }
+  .hub-foot a:hover {
+    color: var(--accent-ink);
+  }
+</style>
